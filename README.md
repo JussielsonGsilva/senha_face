@@ -19,7 +19,9 @@ O sistema também tem um **painel do funcionário da portaria**, protegido por l
 2. Digita a **senha**, comparada com o hash bcrypt salvo no banco.
 3. A câmera captura o rosto e gera uma assinatura facial (embedding).
 4. A assinatura é comparada **apenas** com a do morador daquele código (verificação 1:1).
-5. Se tudo confere, o acesso é liberado e registrado.
+5. **Prova de vida:** o morador vira o rosto para os lados pedidos, em ordem sorteada, e
+   volta de frente para ser reconhecido de novo. Isso impede o acesso com uma foto.
+6. Se tudo confere, o acesso é liberado e registrado.
 
 Na verificação 1:1, o sistema não procura o rosto entre todos os moradores: ele compara
 só com uma pessoa. Isso deixa o processo mais rápido e reduz o risco de confundir alguém.
@@ -33,6 +35,28 @@ só com uma pessoa. Isso deixa o processo mais rápido e reduz o risco de confun
 | Tempo limite | **10 s** | Sem confirmação nesse tempo, o acesso é negado |
 
 Esses valores ficam no início do arquivo `acesso.py` e podem ser ajustados.
+
+### Prova de vida (anti-spoofing)
+
+Uma foto ou tela é **plana**: mesmo inclinando o celular, a ponta do nariz não se desloca em
+relação aos olhos. Um rosto real, ao virar, desloca o nariz para o lado. O sistema mede esse
+deslocamento com os pontos do rosto entregues pelo YuNet (índice de giro).
+
+| Fase | O que a tela pede | Para passar |
+|---|---|---|
+| 1. Rosto | "Olhe para a câmera" | nota ≥ 0,50 em 5 frames seguidos |
+| 2. Desafio | "Vire o rosto para a sua ESQUERDA/DIREITA" (ordem sorteada) | índice de giro além de **0,30** para o lado pedido, em 3 frames |
+| 3. Confirmação | "Olhe de frente" | rosto de frente **e** reconhecido de novo (nota ≥ 0,50), em 3 frames |
+
+- Calibração feita nos testes: foto no celular ficou em no máximo **0,06** (mesmo inclinada);
+  uma pessoa virando a cabeça chegou a **0,48** e **0,67**.
+- A ordem dos lados é sorteada com o gerador seguro do sistema: um vídeo gravado não sabe
+  qual lado vem primeiro.
+- Se o rosto sumir, ou aparecer mais de um, por mais de meio segundo nas fases 2 e 3, o
+  acesso é negado: não dá para trocar a foto por outra pessoa no meio do processo.
+- A confirmação final exige o rosto **do morador** de novo, impedindo que a foto seja usada
+  na fase 1 e outra pessoa faça os movimentos da fase 2.
+- Fases 2 e 3 têm 12 segundos no total. Os parâmetros ficam em `vivacidade.py`.
 
 ### Bloqueio por tentativas
 
@@ -272,7 +296,7 @@ Login com usuário, senha e código 2FA. No painel:
 | `python funcionarios.py` | Cadastra um funcionário do painel (terminal) |
 | `python moradores.py` | Cadastra um morador (terminal) |
 | `python rosto.py` | Cadastra o rosto de um morador (**ESPAÇO** inicia a captura de 5 amostras, **Q** cancela) |
-| `python acesso.py` | Fluxo da portaria pelo terminal (mesma lógica da tela) |
+| `python acesso.py` | Fluxo da portaria pelo terminal (sem a prova de vida; o uso principal é a tela) |
 | `python autenticacao.py` | Testa o login com 2FA pelo terminal |
 | `python email_envio.py` | Envia um e-mail de teste |
 | `python banco.py` | Testa a conexão com o MySQL |
@@ -281,6 +305,7 @@ Login com usuário, senha e código 2FA. No painel:
 | `python teste_deteccao.py` | Mostra a detecção de rosto em tempo real |
 | `python teste_comparacao.py` | Mostra ao vivo a nota de semelhança com o rosto salvo |
 | `python teste_janela.py` | Testa se o PySide6 abre uma janela |
+| `python teste_movimento.py` | Mostra ao vivo o índice de giro do rosto (calibração da prova de vida) |
 
 ### Cadastro do rosto pelo terminal (alternativa)
 
@@ -339,7 +364,9 @@ senha_face/
 ├── teste_comparacao.py      # teste da nota de semelhança facial
 ├── teste_deteccao.py        # teste de detecção de rosto
 ├── teste_janela.py          # teste de janela do PySide6
+├── teste_movimento.py       # calibração do índice de giro (prova de vida)
 ├── veiculos.py              # validação e cadastro de veículos
+├── vivacidade.py            # prova de vida: desafio de movimento da cabeça
 └── README.md
 ```
 
@@ -413,10 +440,10 @@ senha_face/
   - [x] painel: cadastro de rosto
   - [x] painel: histórico de acessos com atualização automática
   - [x] retenção automática de dados (LGPD)
-- [ ] **Etapa 7:** segurança da portaria
+- [x] **Etapa 7:** segurança da portaria
   - [x] bloqueio por tentativas (por código e da portaria)
   - [x] alerta no painel e desbloqueio pelo funcionário, com registro
-  - [ ] detecção de foto na frente da câmera (anti-spoofing)
+  - [x] prova de vida por desafio de movimento (anti-spoofing)
 
 ---
 
