@@ -41,7 +41,7 @@ Esses valores ficam no início do arquivo `acesso.py` e podem ser ajustados.
 3. Com o código confirmado, o painel abre com as abas:
    - **Moradores e veículos:** busca, cadastro, edição e exclusão de morador, e cadastro de veículo;
    - **Rosto:** cadastro (ou troca) do rosto do morador pela câmera;
-   - **Histórico:** em construção.
+   - **Histórico:** tentativas de acesso com filtros, atualizado automaticamente a cada 10 s.
 
 ### Regras de cadastro
 
@@ -150,6 +150,16 @@ mysql -u portaria_app -p portaria_facial < schema.sql
 
 Tabelas criadas: `moradores`, `acessos`, `veiculos`, `funcionarios` e `codigos_2fa`.
 
+O mesmo arquivo cria duas tarefas agendadas do MySQL (EVENTs) para a retenção de dados
+(veja **Segurança e privacidade**). Elas exigem o agendador ligado, que é o padrão no
+MySQL 8. Para conferir:
+
+```bash
+mysql -u portaria_app -p portaria_facial -e "SHOW VARIABLES LIKE 'event_scheduler';"
+```
+
+O valor deve ser `ON`.
+
 ### 7. Configurar o arquivo `.env`
 
 Crie um arquivo `.env` na raiz do projeto com o conteúdo abaixo, usando a senha do passo 5:
@@ -229,6 +239,11 @@ Login com usuário, senha e código 2FA. No painel:
 - **Aba Rosto:** digite o código, clique em **Buscar** (a câmera liga) e em
   **Iniciar captura**. O morador mexe a cabeça devagar enquanto o sistema tira 5 amostras;
   a média é salva e a câmera desliga. A câmera também desliga ao trocar de aba ou sair;
+- **Aba Histórico:** lista as tentativas de acesso (data e hora, código, morador,
+  bloco/apto, resultado em verde ou vermelho, motivo e nota facial), com filtros por
+  período (hoje, 7 dias, 30 dias, tudo), por resultado e busca por código ou nome.
+  Enquanto a aba está aberta, a lista recarrega sozinha a cada 10 segundos, mantendo
+  a posição da rolagem. Mostra no máximo as 500 tentativas mais recentes do filtro;
 - **Sair:** volta para a tela de login.
 
 ### Outros comandos
@@ -280,6 +295,7 @@ senha_face/
 ├── logs/                    # e-mails do modo de desenvolvimento (não versionado)
 ├── .env                     # credenciais e configurações (não versionado)
 ├── .gitignore               # arquivos que não vão para o GitHub
+├── aba_historico.py         # aba do painel com o histórico de acessos
 ├── aba_rosto.py             # aba do painel para cadastrar o rosto pela câmera
 ├── acesso.py                # lógica do acesso: código + senha + rosto + registro
 ├── autenticacao.py          # login do funcionário e código 2FA
@@ -296,7 +312,7 @@ senha_face/
 ├── regras.py                # regras de cadastro (código e senha do morador)
 ├── requirements.txt         # bibliotecas e versões do projeto
 ├── rosto.py                 # detecção, assinatura facial e cadastro do rosto
-├── schema.sql               # criação das tabelas
+├── schema.sql               # criação das tabelas e da limpeza automática (retenção)
 ├── tela_login.py            # tela de login do funcionário com 2FA
 ├── tela_portaria.py         # interface da portaria para o morador
 ├── teste_camera.py          # teste da webcam
@@ -335,6 +351,15 @@ senha_face/
   ficam **anônimos**. Assim o condomínio mantém a trilha de segurança e um funcionário não
   consegue apagar um morador para sumir com as provas de um acesso.
 
+**Retenção de dados (LGPD)**
+
+- Duas tarefas agendadas do MySQL (EVENTs) rodam todo dia às 03:00, mesmo com o sistema
+  fechado:
+  - `limpar_acessos_antigos`: apaga tentativas de acesso com mais de **365 dias**;
+  - `limpar_codigos_2fa`: apaga códigos 2FA criados há mais de **1 dia**.
+- O banco guarda só o necessário: um ano de histórico é suficiente para investigar
+  ocorrências, e o volume fica pequeno (cerca de 65 MB/ano num condomínio de 300 moradores).
+
 **Login do funcionário (2FA)**
 
 - Código de 6 dígitos gerado com `secrets` (gerador seguro) e guardado **em hash**.
@@ -353,12 +378,13 @@ senha_face/
 - [x] **Etapa 3:** detecção de rosto (YuNet) e cadastro da assinatura facial (SFace)
 - [x] **Etapa 4:** verificação de acesso (código + senha + rosto)
 - [x] **Etapa 5:** registro de acessos (log) e cadastro facial com 5 amostras
-- [ ] **Etapa 6:** interface desktop
+- [x] **Etapa 6:** interface desktop
   - [x] tela da portaria para o morador
   - [x] login do funcionário com 2FA por e-mail
   - [x] painel: moradores e veículos (busca, cadastro, edição e exclusão)
   - [x] painel: cadastro de rosto
-  - [ ] painel: histórico de acessos
+  - [x] painel: histórico de acessos com atualização automática
+  - [x] retenção automática de dados (LGPD)
 - [ ] **Etapa 7:** bloqueio por tentativas e detecção de foto (anti-spoofing)
 
 ---

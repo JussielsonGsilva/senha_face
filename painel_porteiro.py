@@ -12,8 +12,9 @@ from dialogos import DialogoMorador, DialogoVeiculo
 from dialogo_editar_morador import DialogoEditarMorador
 from exclusao_morador import DialogoExcluirMorador
 
-# importa a aba de cadastro de rosto
+# importa as abas de rosto e de histórico
 from aba_rosto import AbaRosto
+from aba_historico import AbaHistorico
 
 # importa as classes de interface
 from PySide6.QtWidgets import (
@@ -40,6 +41,7 @@ COLUNAS_MORADORES = ["Código", "Nome", "Bloco", "Apto", "Rosto", "Veículo", "C
 # posição de cada aba (para saber qual está aberta)
 ABA_MORADORES = 0
 ABA_ROSTO = 1
+ABA_HISTORICO = 2
 
 
 class PainelPorteiro(QWidget):
@@ -84,13 +86,14 @@ class PainelPorteiro(QWidget):
 
         # ---------- abas ----------
         self.aba_rosto = AbaRosto()
+        self.aba_historico = AbaHistorico()
 
         self.abas = QTabWidget()
         self.abas.addTab(self.criar_aba_moradores(), "Moradores e veículos")   # índice 0
         self.abas.addTab(self.aba_rosto, "Rosto")                             # índice 1
-        self.abas.addTab(QLabel("Em construção"), "Histórico")                # índice 2
+        self.abas.addTab(self.aba_historico, "Histórico")                     # índice 2
 
-        # ao trocar de aba: desliga a câmera e atualiza a tabela, se for o caso
+        # ao trocar de aba: desliga a câmera e atualiza o conteúdo da aba aberta
         self.abas.currentChanged.connect(self.trocou_aba)
 
         # ---------- layout geral ----------
@@ -110,6 +113,10 @@ class PainelPorteiro(QWidget):
         # voltou para Moradores: recarrega para mostrar mudanças (ex.: Rosto = Sim)
         if indice == ABA_MORADORES:
             self.carregar_moradores()
+
+        # abriu o Histórico: recarrega para mostrar as tentativas mais novas
+        if indice == ABA_HISTORICO:
+            self.aba_historico.carregar()
 
     # ================= aba moradores e veículos =================
 

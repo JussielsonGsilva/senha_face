@@ -5,7 +5,7 @@ CREATE TABLE IF NOT EXISTS moradores (
     -- número interno do morador, gerado automaticamente pelo MySQL
     id INT AUTO_INCREMENT PRIMARY KEY,
 
-    -- código curto que o morador digita no teclado (ex.: 1042); não pode repetir
+    -- código curto que o morador digita no teclado (4 dígitos, regra em regras.py); não pode repetir
     codigo VARCHAR(10) NOT NULL UNIQUE,
 
     -- nome completo do morador
@@ -56,7 +56,7 @@ CREATE TABLE IF NOT EXISTS acessos (
     -- data e hora da tentativa, preenchida automaticamente
     data_hora DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
-    -- índice para buscar rápido por período (ex.: acessos de hoje)
+    -- índice para buscar rápido por período (também acelera a limpeza automática)
     INDEX idx_data_hora (data_hora),
 
     -- liga ao morador; se o morador for apagado, o histórico fica e o campo vira NULL
@@ -133,7 +133,7 @@ CREATE TABLE IF NOT EXISTS codigos_2fa (
     -- código de 6 dígitos guardado com hash bcrypt (nunca o código puro)
     codigo_hash VARCHAR(255) NOT NULL,
 
-    -- até quando o código vale (ex.: 5 minutos depois de enviado)
+    -- até quando o código vale (5 minutos depois de enviado)
     expira_em DATETIME NOT NULL,
 
     -- quantas vezes erraram este código (bloqueia após o limite)
@@ -149,3 +149,24 @@ CREATE TABLE IF NOT EXISTS codigos_2fa (
     CONSTRAINT fk_codigos_funcionario FOREIGN KEY (funcionario_id)
         REFERENCES funcionarios (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+-- =====================================================================
+-- RETENÇÃO DE DADOS (LGPD): limpeza automática diária
+-- Os EVENTs rodam dentro do próprio MySQL, mesmo com o sistema fechado.
+-- Exigem o agendador ligado (event_scheduler = ON, padrão no MySQL 8).
+-- =====================================================================
+
+-- apaga tentativas de acesso com mais de 365 dias, todo dia às 03:00
+CREATE EVENT IF NOT EXISTS limpar_acessos_antigos
+    ON SCHEDULE EVERY 1 DAY
+    STARTS (CURRENT_DATE + INTERVAL 1 DAY + INTERVAL 3 HOUR)
+    COMMENT 'Retenção LGPD: mantém só os últimos 365 dias de histórico de acessos'
+    DO DELETE FROM acessos WHERE data_hora < NOW() - INTERVAL 365 DAY;
+
+-- apaga códigos 2FA criados há mais de 1 dia (já vencidos ou usados), todo dia às 03:00
+CREATE EVENT IF NOT EXISTS limpar_codigos_2fa
+    ON SCHEDULE EVERY 1 DAY
+    STARTS (CURRENT_DATE + INTERVAL 1 DAY + INTERVAL 3 HOUR)
+    COMMENT 'Remove códigos 2FA que não servem mais (validade de 5 minutos)'
+    DO DELETE FROM codigos_2fa WHERE criado_em < NOW() - INTERVAL 1 DAY;
