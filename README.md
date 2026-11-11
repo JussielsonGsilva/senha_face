@@ -12,6 +12,29 @@ O sistema também tem um **painel do funcionário da portaria**, protegido por l
 
 ---
 
+## Telas do sistema
+
+### Portaria: prova de vida
+
+Depois de reconhecer o rosto, a tela pede movimentos em ordem sorteada para confirmar que
+há uma pessoa real na frente da câmera, e não uma foto.
+
+![Tela da portaria pedindo para virar o rosto](print-portaria.png)
+
+### Painel do funcionário
+
+Cadastro, edição e exclusão de moradores e veículos, cadastro de rosto e histórico de acessos.
+
+![Painel do funcionário com a lista de moradores](print-painel.png)
+
+### Login do funcionário
+
+Usuário e senha, seguidos de um código de 6 dígitos enviado por e-mail (2FA).
+
+![Tela de login do funcionário](print-login.png)
+
+---
+
 ## Como funciona
 
 ### Acesso do morador (tela da portaria)
@@ -359,6 +382,9 @@ senha_face/
 ├── moradores.py             # cadastro de moradores com senha em hash
 ├── painel_camera.py         # componente Qt que exibe o vídeo da câmera
 ├── painel_porteiro.py       # painel do funcionário (abre após o login 2FA)
+├── print-login.png          # print da tela de login (README)
+├── print-painel.png         # print do painel do funcionário (README)
+├── print-portaria.png       # print da tela da portaria (README)
 ├── regras.py                # regras do sistema (cadastro e bloqueio por tentativas)
 ├── requirements.txt         # bibliotecas e versões do projeto
 ├── rosto.py                 # detecção, assinatura facial e cadastro do rosto
