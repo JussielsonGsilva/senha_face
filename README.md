@@ -39,7 +39,7 @@ Esses valores ficam no início do arquivo `acesso.py` e podem ser ajustados.
 1. O funcionário informa **usuário e senha**.
 2. Recebe por e-mail um **código de 6 dígitos**, válido por **5 minutos**.
 3. Com o código confirmado, o painel abre com as abas:
-   - **Moradores e veículos:** busca, cadastro de morador e cadastro de veículo;
+   - **Moradores e veículos:** busca, cadastro, edição e exclusão de morador, e cadastro de veículo;
    - **Rosto** e **Histórico:** em construção.
 
 ### Regras de cadastro
@@ -218,6 +218,12 @@ Login com usuário, senha e código 2FA. No painel:
 
 - **Buscar:** por nome, bloco, apartamento, código, modelo, cor ou placa;
 - **+ Novo morador:** cadastra código, nome, bloco, apartamento e senha;
+- **Editar morador** (ou dois cliques na linha): altera nome, bloco, apartamento, situação
+  (Ativo/Inativo) e, opcionalmente, a senha. O código não pode ser alterado. Morador
+  **inativo** não consegue entrar pela portaria;
+- **Excluir morador:** mostra o que será apagado e exige digitar o código do morador para
+  confirmar. Apaga cadastro, senha, rosto e veículos; o histórico de acessos é mantido
+  sem identificação (`morador_id` vazio);
 - **+ Novo veículo:** selecione o morador na tabela e informe modelo, cor e placa;
 - **Sair:** volta para a tela de login.
 
@@ -274,8 +280,10 @@ senha_face/
 ├── autenticacao.py          # login do funcionário e código 2FA
 ├── banco.py                 # conexão com o MySQL
 ├── consultas.py             # consultas usadas no painel
+├── dialogo_editar_morador.py # formulário de edição de morador
 ├── dialogos.py              # formulários de novo morador e novo veículo
 ├── email_envio.py           # envio de e-mail pela API da Brevo
+├── exclusao_morador.py      # exclusão de morador com confirmação
 ├── funcionarios.py          # cadastro de funcionários (terminal)
 ├── moradores.py             # cadastro de moradores com senha em hash
 ├── painel_camera.py         # componente Qt que exibe o vídeo da câmera
@@ -315,6 +323,13 @@ senha_face/
 - **Auditoria:** toda tentativa é registrada, inclusive com código inexistente. A senha
   digitada **nunca** é gravada. O histórico é preservado mesmo se o morador for removido.
 
+**Exclusão de morador**
+
+- A exclusão exige digitar o código do morador para liberar o botão.
+- Dados pessoais (cadastro, senha, rosto e veículos) são apagados; os registros de acesso
+  ficam **anônimos**. Assim o condomínio mantém a trilha de segurança e um funcionário não
+  consegue apagar um morador para sumir com as provas de um acesso.
+
 **Login do funcionário (2FA)**
 
 - Código de 6 dígitos gerado com `secrets` (gerador seguro) e guardado **em hash**.
@@ -336,7 +351,7 @@ senha_face/
 - [ ] **Etapa 6:** interface desktop
   - [x] tela da portaria para o morador
   - [x] login do funcionário com 2FA por e-mail
-  - [x] painel: moradores e veículos (busca e cadastro)
+  - [x] painel: moradores e veículos (busca, cadastro, edição e exclusão)
   - [ ] painel: cadastro de rosto
   - [ ] painel: histórico de acessos
 - [ ] **Etapa 7:** bloqueio por tentativas e detecção de foto (anti-spoofing)

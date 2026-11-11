@@ -7,9 +7,10 @@ from consultas import listar_moradores_veiculos, formatar_placa
 # importa a tela de login (o painel só abre depois do login com 2FA)
 from tela_login import TelaLogin
 
-# importa os formulários de cadastro e de edição
+# importa os formulários de cadastro, edição e exclusão
 from dialogos import DialogoMorador, DialogoVeiculo
 from dialogo_editar_morador import DialogoEditarMorador
+from exclusao_morador import DialogoExcluirMorador
 
 # importa as classes de interface
 from PySide6.QtWidgets import (
@@ -47,7 +48,7 @@ class PainelPorteiro(QWidget):
 
         # título e tamanho
         self.setWindowTitle("Portaria - Painel do funcionário")
-        self.resize(1150, 650)
+        self.resize(1250, 650)
 
         # mesmo estilo escuro das outras telas
         self.setStyleSheet("""
@@ -56,6 +57,7 @@ class PainelPorteiro(QWidget):
             QLineEdit:focus { border: 2px solid #3b82f6; }
             QPushButton { background-color: #333; border: 1px solid #555; border-radius: 6px; padding: 8px 14px; }
             QPushButton:pressed { background-color: #555; }
+            QPushButton:disabled { color: #777; background-color: #2a2a2a; }
             QTabWidget::pane { border: 1px solid #444; }
             QTabBar::tab { background: #2d2d2d; padding: 8px 18px; }
             QTabBar::tab:selected { background: #2563eb; }
@@ -112,6 +114,11 @@ class PainelPorteiro(QWidget):
         botao_editar_morador.setStyleSheet("background-color: #a16207;")
         botao_editar_morador.clicked.connect(self.editar_morador)
 
+        # botão para excluir o morador selecionado
+        botao_excluir_morador = QPushButton("Excluir morador")
+        botao_excluir_morador.setStyleSheet("background-color: #b91c1c;")
+        botao_excluir_morador.clicked.connect(self.excluir_morador)
+
         # botão para cadastrar veículo do morador selecionado
         botao_novo_veiculo = QPushButton("+ Novo veículo")
         botao_novo_veiculo.setStyleSheet("background-color: #1d4ed8;")
@@ -122,6 +129,7 @@ class PainelPorteiro(QWidget):
         linha_busca.addWidget(botao_atualizar)
         linha_busca.addWidget(botao_novo_morador)
         linha_busca.addWidget(botao_editar_morador)
+        linha_busca.addWidget(botao_excluir_morador)
         linha_busca.addWidget(botao_novo_veiculo)
 
         # tabela com as colunas definidas lá em cima
@@ -229,6 +237,24 @@ class PainelPorteiro(QWidget):
             if dialogo.senha_trocada:
                 aviso += " (senha alterada)"
             self.total_moradores.setText(self.total_moradores.text() + aviso + ".")
+
+    def excluir_morador(self):
+        """Abre a confirmação de exclusão para o morador selecionado."""
+        selecionado = self.morador_selecionado()
+
+        # sem linha selecionada: avisa e não abre a confirmação
+        if selecionado is None:
+            self.total_moradores.setText("Selecione um morador na tabela antes de excluir.")
+            return
+
+        codigo, nome = selecionado
+        dialogo = DialogoExcluirMorador(codigo, self)
+
+        if dialogo.exec() == QDialog.Accepted:
+            self.carregar_moradores()
+            self.total_moradores.setText(
+                self.total_moradores.text() + f"  —  morador {nome} excluído."
+            )
 
     def novo_veiculo(self):
         """Abre o formulário de veículo para o morador selecionado."""
