@@ -1,6 +1,9 @@
 # importa o sys para passar argumentos ao Qt e encerrar o programa
 import sys
 
+# importa o math para arredondar os minutos para cima
+import math
+
 # importa as consultas do painel
 from consultas import listar_moradores_veiculos, formatar_placa
 
@@ -16,6 +19,9 @@ from exclusao_morador import DialogoExcluirMorador
 from aba_rosto import AbaRosto
 from aba_historico import AbaHistorico
 
+# importa a consulta e o desbloqueio da portaria
+from bloqueio import situacao_bloqueio, desbloquear
+
 # importa as classes de interface
 from PySide6.QtWidgets import (
     QApplication,       # a aplicação Qt
@@ -30,10 +36,11 @@ from PySide6.QtWidgets import (
     QTableWidgetItem,   # célula da tabela
     QHeaderView,        # cabeçalho da tabela (para ajustar largura das colunas)
     QDialog,            # usado para conferir se o diálogo foi salvo (Accepted)
+    QMessageBox,        # caixa de confirmação do desbloqueio
 )
 
-# Qt = constantes de alinhamento
-from PySide6.QtCore import Qt
+# Qt = constantes de alinhamento; QTimer = relógio da verificação de bloqueio
+from PySide6.QtCore import Qt, QTimer
 
 # títulos das colunas da tabela de moradores
 COLUNAS_MORADORES = ["Código", "Nome", "Bloco", "Apto", "Rosto", "Veículo", "Cor", "Placa", "Situação"]
@@ -42,6 +49,14 @@ COLUNAS_MORADORES = ["Código", "Nome", "Bloco", "Apto", "Rosto", "Veículo", "C
 ABA_MORADORES = 0
 ABA_ROSTO = 1
 ABA_HISTORICO = 2
+
+# de quanto em quanto tempo o painel confere se há bloqueio (5 segundos)
+INTERVALO_ALERTA_MS = 5_000
+
+
+def em_minutos(segundos):
+    """Converte segundos em minutos inteiros, arredondando para cima (mínimo 1)."""
+    return max(math.ceil(segundos / 60), 1)
 
 
 class PainelPorteiro(QWidget):
@@ -57,7 +72,7 @@ class PainelPorteiro(QWidget):
 
         # título e tamanho
         self.setWindowTitle("Portaria - Painel do funcionário")
-        self.resize(1250, 680)
+        self.resize(1250, 700)
 
         # mesmo estilo escuro das outras telas
         self.setStyleSheet("""
@@ -84,6 +99,29 @@ class PainelPorteiro(QWidget):
         barra_topo.addStretch()
         barra_topo.addWidget(botao_sair)
 
+        # ---------- faixa vermelha de bloqueio (escondida até haver bloqueio) ----------
+        self.faixa_alerta = QWidget()
+        self.faixa_alerta.setStyleSheet("background-color: #7f1d1d; border-radius: 6px;")
+
+        self.texto_alerta = QLabel("")
+        self.texto_alerta.setWordWrap(True)
+        self.texto_alerta.setStyleSheet("font-size: 16px; font-weight: bold; padding: 6px;")
+
+        botao_desbloquear = QPushButton("Desbloquear")
+        botao_desbloquear.setStyleSheet("background-color: #b91c1c; font-weight: bold;")
+        botao_desbloquear.clicked.connect(self.desbloquear_portaria)
+
+        layout_alerta = QHBoxLayout(self.faixa_alerta)
+        layout_alerta.addWidget(self.texto_alerta, 1)
+        layout_alerta.addWidget(botao_desbloquear)
+
+        self.faixa_alerta.hide()
+
+        # relógio que confere o bloqueio a cada 5 s, em qualquer aba
+        self.timer_alerta = QTimer(self)
+        self.timer_alerta.timeout.connect(self.atualizar_alerta)
+        self.timer_alerta.start(INTERVALO_ALERTA_MS)
+
         # ---------- abas ----------
         self.aba_rosto = AbaRosto()
         self.aba_historico = AbaHistorico()
@@ -99,10 +137,55 @@ class PainelPorteiro(QWidget):
         # ---------- layout geral ----------
         layout = QVBoxLayout(self)
         layout.addLayout(barra_topo)
+        layout.addWidget(self.faixa_alerta)
         layout.addWidget(self.abas)
 
-        # carrega a tabela ao abrir
+        # carrega a tabela e confere o bloqueio ao abrir
         self.carregar_moradores()
+        self.atualizar_alerta()
+
+    # ================= alerta e desbloqueio =================
+
+    def atualizar_alerta(self):
+        """Confere o bloqueio no banco e mostra ou esconde a faixa vermelha."""
+        situacao = situacao_bloqueio()
+        partes = []
+
+        # trava da portaria inteira
+        if situacao["portaria"] > 0:
+            partes.append(
+                f"⚠️ PORTARIA BLOQUEADA por excesso de tentativas — libera em "
+                f"{em_minutos(situacao['portaria'])} min."
+            )
+
+        # códigos bloqueados individualmente
+        if situacao["codigos"]:
+            lista = ", ".join(f"{codigo} ({em_minutos(seg)} min)" for codigo, seg in situacao["codigos"])
+            partes.append(f"Códigos bloqueados: {lista}.")
+
+        # mostra a faixa só se houver algum bloqueio
+        if partes:
+            self.texto_alerta.setText("  ".join(partes))
+            self.faixa_alerta.show()
+        else:
+            self.faixa_alerta.hide()
+
+    def desbloquear_portaria(self):
+        """Pede confirmação, registra o desbloqueio e atualiza a faixa."""
+        resposta = QMessageBox.question(
+            self,
+            "Desbloquear portaria",
+            "Confirme que você verificou a situação na portaria.\n\n"
+            "O desbloqueio libera a portaria e todos os códigos bloqueados agora.\n"
+            "Os registros de tentativas continuam no histórico e o desbloqueio\n"
+            "fica registrado com o seu nome.",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,   # botão padrão = Não (evita desbloquear por engano com Enter)
+        )
+
+        if resposta == QMessageBox.Yes:
+            desbloquear(self.funcionario["id"])
+            self.atualizar_alerta()
 
     def trocou_aba(self, indice):
         """Chamado quando o funcionário muda de aba."""
@@ -114,9 +197,7 @@ class PainelPorteiro(QWidget):
         if indice == ABA_MORADORES:
             self.carregar_moradores()
 
-        # abriu o Histórico: recarrega para mostrar as tentativas mais novas
-        if indice == ABA_HISTORICO:
-            self.aba_historico.carregar()
+        # o Histórico se recarrega sozinho ao aparecer (showEvent da AbaHistorico)
 
     # ================= aba moradores e veículos =================
 
@@ -306,13 +387,15 @@ class PainelPorteiro(QWidget):
     # ================= sair =================
 
     def sair(self):
-        """Desliga a câmera, fecha o painel e volta para a tela de login."""
+        """Desliga câmera e relógio, fecha o painel e volta para a tela de login."""
+        self.timer_alerta.stop()
         self.aba_rosto.cancelar()
         self.close()
         self.ao_sair()
 
     def closeEvent(self, evento):
-        """Chamado quando a janela fecha (inclusive pelo X): garante a câmera desligada."""
+        """Chamado quando a janela fecha (inclusive pelo X): desliga câmera e relógio."""
+        self.timer_alerta.stop()
         self.aba_rosto.cancelar()
         evento.accept()
 

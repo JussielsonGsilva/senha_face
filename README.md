@@ -34,6 +34,20 @@ só com uma pessoa. Isso deixa o processo mais rápido e reduz o risco de confun
 
 Esses valores ficam no início do arquivo `acesso.py` e podem ser ajustados.
 
+### Bloqueio por tentativas
+
+| Trava | Regra |
+|---|---|
+| Por código | **5 erros** de código/senha com o mesmo código em 10 min bloqueiam esse código |
+| Da portaria | **5 erros** de código/senha com qualquer código em 10 min bloqueiam a portaria inteira |
+| Tempo de bloqueio | libera **10 min** depois do 5º erro |
+
+- Só contam erros de código ou senha; falha no reconhecimento do rosto não conta.
+- A trava vale também para códigos inexistentes, com a mesma mensagem, para não revelar
+  quais códigos existem.
+- Tentativas durante o bloqueio não prolongam o bloqueio.
+- O funcionário pode **desbloquear pelo painel** (veja abaixo). Os valores ficam em `regras.py`.
+
 ### Painel do funcionário
 
 1. O funcionário informa **usuário e senha**.
@@ -148,7 +162,7 @@ EXIT;
 mysql -u portaria_app -p portaria_facial < schema.sql
 ```
 
-Tabelas criadas: `moradores`, `acessos`, `veiculos`, `funcionarios` e `codigos_2fa`.
+Tabelas criadas: `moradores`, `acessos`, `veiculos`, `funcionarios`, `codigos_2fa` e `desbloqueios`.
 
 O mesmo arquivo cria duas tarefas agendadas do MySQL (EVENTs) para a retenção de dados
 (veja **Segurança e privacidade**). Elas exigem o agendador ligado, que é o padrão no
@@ -227,6 +241,11 @@ python painel_porteiro.py
 
 Login com usuário, senha e código 2FA. No painel:
 
+- **Alerta de bloqueio:** a cada 5 segundos o painel confere se a portaria ou algum código
+  está bloqueado por excesso de tentativas. Se estiver, aparece uma faixa vermelha no topo
+  com o tempo restante e o botão **Desbloquear**, que libera tudo na hora (com confirmação).
+  O desbloqueio fica registrado com o nome do funcionário e nada é apagado do histórico;
+
 - **Buscar:** por nome, bloco, apartamento, código, modelo, cor ou placa;
 - **+ Novo morador:** cadastra código, nome, bloco, apartamento e senha;
 - **Editar morador** (ou dois cliques na linha): altera nome, bloco, apartamento, situação
@@ -300,6 +319,7 @@ senha_face/
 ├── acesso.py                # lógica do acesso: código + senha + rosto + registro
 ├── autenticacao.py          # login do funcionário e código 2FA
 ├── banco.py                 # conexão com o MySQL
+├── bloqueio.py              # bloqueio por tentativas e desbloqueio pelo funcionário
 ├── consultas.py             # consultas usadas no painel
 ├── dialogo_editar_morador.py # formulário de edição de morador
 ├── dialogos.py              # formulários de novo morador e novo veículo
@@ -309,7 +329,7 @@ senha_face/
 ├── moradores.py             # cadastro de moradores com senha em hash
 ├── painel_camera.py         # componente Qt que exibe o vídeo da câmera
 ├── painel_porteiro.py       # painel do funcionário (abre após o login 2FA)
-├── regras.py                # regras de cadastro (código e senha do morador)
+├── regras.py                # regras do sistema (cadastro e bloqueio por tentativas)
 ├── requirements.txt         # bibliotecas e versões do projeto
 ├── rosto.py                 # detecção, assinatura facial e cadastro do rosto
 ├── schema.sql               # criação das tabelas e da limpeza automática (retenção)
@@ -344,6 +364,13 @@ senha_face/
 - **Auditoria:** toda tentativa é registrada, inclusive com código inexistente. A senha
   digitada **nunca** é gravada. O histórico é preservado mesmo se o morador for removido.
 
+**Bloqueio por tentativas**
+
+- O bloqueio é conferido **antes** de testar a senha, então insistir não adianta.
+- O desbloqueio pelo funcionário **não apaga** os erros: ele registra o momento (tabela
+  `desbloqueios`, com o funcionário) e o sistema passa a contar só os erros posteriores.
+  Assim um desbloqueio não serve para sumir com as provas de um ataque.
+
 **Exclusão de morador**
 
 - A exclusão exige digitar o código do morador para liberar o botão.
@@ -356,7 +383,8 @@ senha_face/
 - Duas tarefas agendadas do MySQL (EVENTs) rodam todo dia às 03:00, mesmo com o sistema
   fechado:
   - `limpar_acessos_antigos`: apaga tentativas de acesso com mais de **365 dias**;
-  - `limpar_codigos_2fa`: apaga códigos 2FA criados há mais de **1 dia**.
+  - `limpar_codigos_2fa`: apaga códigos 2FA criados há mais de **1 dia**;
+  - `limpar_desbloqueios_antigos`: apaga registros de desbloqueio com mais de **365 dias**.
 - O banco guarda só o necessário: um ano de histórico é suficiente para investigar
   ocorrências, e o volume fica pequeno (cerca de 65 MB/ano num condomínio de 300 moradores).
 
@@ -385,7 +413,10 @@ senha_face/
   - [x] painel: cadastro de rosto
   - [x] painel: histórico de acessos com atualização automática
   - [x] retenção automática de dados (LGPD)
-- [ ] **Etapa 7:** bloqueio por tentativas e detecção de foto (anti-spoofing)
+- [ ] **Etapa 7:** segurança da portaria
+  - [x] bloqueio por tentativas (por código e da portaria)
+  - [x] alerta no painel e desbloqueio pelo funcionário, com registro
+  - [ ] detecção de foto na frente da câmera (anti-spoofing)
 
 ---
 

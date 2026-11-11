@@ -56,7 +56,7 @@ CREATE TABLE IF NOT EXISTS acessos (
     -- data e hora da tentativa, preenchida automaticamente
     data_hora DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
-    -- índice para buscar rápido por período (também acelera a limpeza automática)
+    -- índice para buscar rápido por período (também acelera a limpeza e o bloqueio)
     INDEX idx_data_hora (data_hora),
 
     -- liga ao morador; se o morador for apagado, o histórico fica e o campo vira NULL
@@ -152,6 +152,29 @@ CREATE TABLE IF NOT EXISTS codigos_2fa (
 
 
 -- =====================================================================
+-- DESBLOQUEIOS DA PORTARIA (feitos pelo funcionário no painel)
+-- O bloqueio só conta os erros que aconteceram DEPOIS do último desbloqueio.
+-- Os erros antigos continuam no histórico (nada é apagado).
+-- =====================================================================
+CREATE TABLE IF NOT EXISTS desbloqueios (
+    -- número interno do desbloqueio
+    id INT AUTO_INCREMENT PRIMARY KEY,
+
+    -- funcionário que desbloqueou; se o funcionário for apagado, o registro fica e o campo vira NULL
+    funcionario_id INT NULL,
+
+    -- data e hora do desbloqueio
+    data_hora DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    -- índice para achar rápido o último desbloqueio
+    INDEX idx_desbloqueio_data (data_hora),
+
+    CONSTRAINT fk_desbloqueios_funcionario FOREIGN KEY (funcionario_id)
+        REFERENCES funcionarios (id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+-- =====================================================================
 -- RETENÇÃO DE DADOS (LGPD): limpeza automática diária
 -- Os EVENTs rodam dentro do próprio MySQL, mesmo com o sistema fechado.
 -- Exigem o agendador ligado (event_scheduler = ON, padrão no MySQL 8).
@@ -170,3 +193,10 @@ CREATE EVENT IF NOT EXISTS limpar_codigos_2fa
     STARTS (CURRENT_DATE + INTERVAL 1 DAY + INTERVAL 3 HOUR)
     COMMENT 'Remove códigos 2FA que não servem mais (validade de 5 minutos)'
     DO DELETE FROM codigos_2fa WHERE criado_em < NOW() - INTERVAL 1 DAY;
+
+-- apaga registros de desbloqueio com mais de 365 dias, todo dia às 03:00
+CREATE EVENT IF NOT EXISTS limpar_desbloqueios_antigos
+    ON SCHEDULE EVERY 1 DAY
+    STARTS (CURRENT_DATE + INTERVAL 1 DAY + INTERVAL 3 HOUR)
+    COMMENT 'Retenção LGPD: mantém só os últimos 365 dias de desbloqueios'
+    DO DELETE FROM desbloqueios WHERE data_hora < NOW() - INTERVAL 365 DAY;

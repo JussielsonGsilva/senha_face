@@ -1,6 +1,9 @@
 # importa o time para medir o tempo limite da verificação facial
 import time
 
+# importa o math para arredondar os minutos de bloqueio para cima
+import math
+
 # importa o OpenCV para câmera e desenho na tela
 import cv2
 
@@ -15,6 +18,12 @@ from banco import conectar
 
 # importa as funções de rosto criadas na etapa 3
 from rosto import criar_detector, criar_reconhecedor, gerar_assinatura, bytes_para_assinatura
+
+# importa a verificação de bloqueio por tentativas
+from bloqueio import verificar_bloqueio
+
+# importa os textos fixos do motivo (usados na contagem dos erros)
+from regras import MOTIVO_CREDENCIAIS_INVALIDAS, MOTIVO_BLOQUEADO
 
 # nota mínima de semelhança, definida no teste da etapa 4.1
 LIMITE_SEMELHANCA = 0.5
@@ -33,6 +42,11 @@ COMPARACAO_COSSENO = 0
 
 # tamanho máximo do código, igual à coluna codigo_digitado (VARCHAR(10))
 TAMANHO_MAX_CODIGO = 10
+
+
+def minutos_de_espera(segundos):
+    """Converte segundos de bloqueio em minutos inteiros, arredondando para cima (ex.: 61 s -> 2 min)."""
+    return max(math.ceil(segundos / 60), 1)
 
 
 def registrar_acesso(codigo_digitado, morador_id, resultado, motivo, nota_facial=None):
@@ -63,11 +77,17 @@ def registrar_acesso(codigo_digitado, morador_id, resultado, motivo, nota_facial
 
 
 def verificar_credenciais(codigo, senha):
-    """Confere código e senha.
-    Devolve (situacao, morador_id, nome, assinatura), onde situacao é:
-    'ok'         -> código e senha certos, rosto cadastrado
+    """Confere bloqueio, código e senha.
+    Devolve (situacao, morador_id, nome, extra), onde situacao é:
+    'bloqueado'  -> muitas tentativas; extra = segundos que faltam para liberar
+    'ok'         -> código e senha certos, rosto cadastrado; extra = assinatura do rosto
     'sem_rosto'  -> código e senha certos, mas sem rosto cadastrado
     'invalido'   -> código inexistente ou senha errada"""
+    # 1º confere o bloqueio, ANTES de testar a senha (assim não dá para insistir)
+    segundos = verificar_bloqueio(codigo)
+    if segundos > 0:
+        return ("bloqueado", None, None, segundos)
+
     # busca o morador ativo pelo código
     conexao = conectar()
     cursor = conexao.cursor()
@@ -99,7 +119,7 @@ def verificar_credenciais(codigo, senha):
 
 
 def verificar_rosto(assinatura_salva):
-    """Abre a câmera e tenta confirmar o rosto.
+    """Abre a câmera e tenta confirmar o rosto (usado pelo modo terminal).
     Devolve (aprovado, motivo, melhor_nota)."""
     # cria os modelos de detecção e reconhecimento
     detector = criar_detector()
@@ -110,16 +130,10 @@ def verificar_rosto(assinatura_salva):
     if not camera.isOpened():
         return (False, "câmera não abriu", 0.0)
 
-    # contador de frames seguidos aprovados
+    # contadores e resultado inicial
     acertos_seguidos = 0
-
-    # contador de leituras da câmera que falharam
     falhas_leitura = 0
-
-    # maior nota vista durante a verificação
     melhor_nota = 0.0
-
-    # resultado inicial
     aprovado = False
     motivo = "tempo esgotado"
 
@@ -129,15 +143,11 @@ def verificar_rosto(assinatura_salva):
     while True:
         # calcula quantos segundos ainda restam
         restante = TEMPO_LIMITE - (time.time() - inicio)
-
-        # se o tempo acabou, encerra (o motivo já é "tempo esgotado")
         if restante <= 0:
             break
 
-        # lê um frame da câmera
+        # lê um frame; se falhar, conta e tenta de novo
         ok, frame = camera.read()
-
-        # se a leitura falhou, conta a falha e tenta de novo em vez de desistir
         if not ok:
             falhas_leitura += 1
             if falhas_leitura >= MAX_FALHAS_LEITURA:
@@ -152,23 +162,15 @@ def verificar_rosto(assinatura_salva):
 
         # cópia só para desenhar
         tela = frame.copy()
-
-        # texto padrão da nota, quando não há rosto avaliado
         texto_nota = "Nota: --"
 
         # só avalia quando há exatamente UM rosto na frente da câmera
         if rostos is not None and len(rostos) == 1:
-            # gera a assinatura do rosto ao vivo e calcula a nota
             assinatura_ao_vivo = gerar_assinatura(reconhecedor, frame, rostos[0])
             nota = reconhecedor.match(assinatura_salva, assinatura_ao_vivo, COMPARACAO_COSSENO)
-
-            # guarda a maior nota já vista
             melhor_nota = max(melhor_nota, nota)
-
-            # prepara o texto da nota para a tela
             texto_nota = f"Nota: {nota:.2f}"
 
-            # se passou no limite, soma um acerto; se não, zera a sequência
             if nota >= LIMITE_SEMELHANCA:
                 acertos_seguidos += 1
                 cor = (0, 255, 0)
@@ -176,29 +178,23 @@ def verificar_rosto(assinatura_salva):
                 acertos_seguidos = 0
                 cor = (0, 0, 255)
 
-            # desenha o retângulo em volta do rosto
             x, y, w, h = rostos[0][0:4].astype(int)
             cv2.rectangle(tela, (x, y), (x + w, y + h), cor, 2)
         else:
-            # nenhum rosto ou mais de um: zera a sequência
             acertos_seguidos = 0
 
-        # linha 1: tempo restante e progresso da confirmação
+        # textos na tela: tempo, progresso e nota
         cv2.putText(tela, f"Tempo: {restante:.0f}s  Confirmando: {acertos_seguidos}/{FRAMES_PARA_CONFIRMAR}",
                     (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-
-        # linha 2: nota atual
         cv2.putText(tela, texto_nota, (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-
-        # mostra a imagem
         cv2.imshow("Verificacao Facial", tela)
 
-        # Q permite cancelar
+        # Q cancela
         if cv2.waitKey(1) & 0xFF == ord("q"):
             motivo = "cancelado pelo usuário"
             break
 
-        # atingiu os frames seguidos necessários: aprovado
+        # confirmou
         if acertos_seguidos >= FRAMES_PARA_CONFIRMAR:
             aprovado = True
             motivo = "rosto confirmado"
@@ -211,36 +207,38 @@ def verificar_rosto(assinatura_salva):
     return (aprovado, motivo, melhor_nota)
 
 
-# este bloco só roda com "python acesso.py"
+# este bloco só roda com "python acesso.py" (modo terminal)
 if __name__ == "__main__":
     print("=== PORTARIA ===")
 
-    # passo 1: código
+    # código e senha (a senha não aparece e nunca é gravada)
     codigo = input("Código de acesso: ").strip()
-
-    # passo 2: senha (não aparece na tela e nunca é gravada)
     senha = getpass("Senha: ")
 
-    # confere código e senha juntos
-    situacao, morador_id, nome, assinatura_salva = verificar_credenciais(codigo, senha)
+    situacao, morador_id, nome, extra = verificar_credenciais(codigo, senha)
+
+    # bloqueado por tentativas: registra e informa o tempo de espera
+    if situacao == "bloqueado":
+        registrar_acesso(codigo, None, "NEGADO", MOTIVO_BLOQUEADO)
+        print(f"ACESSO NEGADO: muitas tentativas. Aguarde {minutos_de_espera(extra)} min.")
+        exit()
 
     # código ou senha inválidos: registra e mostra mensagem genérica
     if situacao == "invalido":
-        registrar_acesso(codigo, morador_id, "NEGADO", "código ou senha inválidos")
+        registrar_acesso(codigo, morador_id, "NEGADO", MOTIVO_CREDENCIAIS_INVALIDAS)
         print("ACESSO NEGADO: código ou senha inválidos.")
         exit()
 
-    # senha certa, mas sem rosto cadastrado: registra e avisa
+    # senha certa, mas sem rosto cadastrado
     if situacao == "sem_rosto":
         registrar_acesso(codigo, morador_id, "NEGADO", "rosto não cadastrado")
         print("ACESSO NEGADO: rosto não cadastrado. Procure a administração.")
         exit()
 
-    # passo 3: verificação facial
+    # verificação facial (extra = assinatura salva)
     print("Olhe para a câmera...")
-    aprovado, motivo, melhor_nota = verificar_rosto(assinatura_salva)
+    aprovado, motivo, melhor_nota = verificar_rosto(extra)
 
-    # registra o resultado final com o motivo e a melhor nota
     if aprovado:
         registrar_acesso(codigo, morador_id, "LIBERADO", motivo, melhor_nota)
         print(f"ACESSO LIBERADO. Bem-vindo(a), {nome}!")
