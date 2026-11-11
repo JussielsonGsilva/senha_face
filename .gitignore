@@ -1,0 +1,14 @@
+# arquivo com senhas e chaves: nunca enviar ao GitHub
+.env
+
+# ambiente virtual: cada pessoa cria o seu
+.venv/
+
+# arquivos temporários que o Python gera
+__pycache__/
+
+# logs e e-mails do modo de desenvolvimento (podem conter códigos de acesso)
+logs/
+
+# modelos de rosto (38 MB): baixados pelos comandos do README, passo 4
+modelos/
