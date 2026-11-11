@@ -7,8 +7,9 @@ from consultas import listar_moradores_veiculos, formatar_placa
 # importa a tela de login (o painel só abre depois do login com 2FA)
 from tela_login import TelaLogin
 
-# importa os formulários de cadastro
+# importa os formulários de cadastro e de edição
 from dialogos import DialogoMorador, DialogoVeiculo
+from dialogo_editar_morador import DialogoEditarMorador
 
 # importa as classes de interface
 from PySide6.QtWidgets import (
@@ -46,12 +47,12 @@ class PainelPorteiro(QWidget):
 
         # título e tamanho
         self.setWindowTitle("Portaria - Painel do funcionário")
-        self.resize(1100, 650)
+        self.resize(1150, 650)
 
         # mesmo estilo escuro das outras telas
         self.setStyleSheet("""
             QWidget { background-color: #1e1e1e; color: #f0f0f0; font-size: 15px; }
-            QLineEdit { background-color: #2d2d2d; border: 2px solid #555; border-radius: 6px; padding: 6px; }
+            QLineEdit, QComboBox { background-color: #2d2d2d; border: 2px solid #555; border-radius: 6px; padding: 6px; }
             QLineEdit:focus { border: 2px solid #3b82f6; }
             QPushButton { background-color: #333; border: 1px solid #555; border-radius: 6px; padding: 8px 14px; }
             QPushButton:pressed { background-color: #555; }
@@ -106,6 +107,11 @@ class PainelPorteiro(QWidget):
         botao_novo_morador.setStyleSheet("background-color: #15803d;")
         botao_novo_morador.clicked.connect(self.novo_morador)
 
+        # botão para editar o morador selecionado
+        botao_editar_morador = QPushButton("Editar morador")
+        botao_editar_morador.setStyleSheet("background-color: #a16207;")
+        botao_editar_morador.clicked.connect(self.editar_morador)
+
         # botão para cadastrar veículo do morador selecionado
         botao_novo_veiculo = QPushButton("+ Novo veículo")
         botao_novo_veiculo.setStyleSheet("background-color: #1d4ed8;")
@@ -115,6 +121,7 @@ class PainelPorteiro(QWidget):
         linha_busca.addWidget(self.campo_busca)
         linha_busca.addWidget(botao_atualizar)
         linha_busca.addWidget(botao_novo_morador)
+        linha_busca.addWidget(botao_editar_morador)
         linha_busca.addWidget(botao_novo_veiculo)
 
         # tabela com as colunas definidas lá em cima
@@ -127,6 +134,9 @@ class PainelPorteiro(QWidget):
         # clicar seleciona a linha inteira, e só uma linha por vez
         self.tabela_moradores.setSelectionBehavior(QTableWidget.SelectRows)
         self.tabela_moradores.setSelectionMode(QTableWidget.SingleSelection)
+
+        # dois cliques numa linha abre a edição do morador
+        self.tabela_moradores.cellDoubleClicked.connect(lambda linha, coluna: self.editar_morador())
 
         # esconde a numeração de linhas da esquerda
         self.tabela_moradores.verticalHeader().setVisible(False)
@@ -200,6 +210,25 @@ class PainelPorteiro(QWidget):
             self.total_moradores.setText(
                 self.total_moradores.text() + "  —  morador cadastrado. Cadastre o rosto na aba Rosto."
             )
+
+    def editar_morador(self):
+        """Abre o formulário de edição para o morador selecionado."""
+        selecionado = self.morador_selecionado()
+
+        # sem linha selecionada: avisa e não abre o formulário
+        if selecionado is None:
+            self.total_moradores.setText("Selecione um morador na tabela antes de editar.")
+            return
+
+        codigo, nome = selecionado
+        dialogo = DialogoEditarMorador(codigo, self)
+
+        if dialogo.exec() == QDialog.Accepted:
+            self.carregar_moradores()
+            aviso = f"  —  dados de {nome} atualizados"
+            if dialogo.senha_trocada:
+                aviso += " (senha alterada)"
+            self.total_moradores.setText(self.total_moradores.text() + aviso + ".")
 
     def novo_veiculo(self):
         """Abre o formulário de veículo para o morador selecionado."""

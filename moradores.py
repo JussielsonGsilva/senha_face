@@ -61,6 +61,57 @@ def cadastrar_morador(codigo, nome, bloco, apartamento, senha):
     return novo_id
 
 
+def obter_morador(codigo):
+    """Devolve os dados de um morador (sem a senha) como dicionário, ou None se não existir."""
+    conexao = conectar()
+
+    # dictionary=True: cada linha vem como dicionário (acesso pelo nome da coluna)
+    cursor = conexao.cursor(dictionary=True)
+    cursor.execute(
+        "SELECT id, codigo, nome, bloco, apartamento, ativo FROM moradores WHERE codigo = %s",
+        (codigo,),
+    )
+    morador = cursor.fetchone()
+
+    cursor.close()
+    conexao.close()
+    return morador
+
+
+def atualizar_morador(codigo, nome, bloco, apartamento, ativo, nova_senha=None):
+    """Atualiza os dados do morador. Se nova_senha vier preenchida, troca a senha também.
+    O código NÃO é alterado (ele identifica o morador no histórico)."""
+    conexao = conectar()
+    cursor = conexao.cursor()
+
+    if nova_senha:
+        # gera o hash da nova senha e atualiza tudo, inclusive a senha
+        senha_hash = bcrypt.hashpw(nova_senha.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+        cursor.execute(
+            """
+            UPDATE moradores
+            SET nome = %s, bloco = %s, apartamento = %s, ativo = %s, senha_hash = %s
+            WHERE codigo = %s
+            """,
+            (nome, bloco or None, apartamento, 1 if ativo else 0, senha_hash, codigo),
+        )
+    else:
+        # mantém a senha atual e atualiza só os dados
+        cursor.execute(
+            """
+            UPDATE moradores
+            SET nome = %s, bloco = %s, apartamento = %s, ativo = %s
+            WHERE codigo = %s
+            """,
+            (nome, bloco or None, apartamento, 1 if ativo else 0, codigo),
+        )
+
+    # confirma a gravação e fecha tudo
+    conexao.commit()
+    cursor.close()
+    conexao.close()
+
+
 def pedir_codigo():
     """Pede o código até ter o formato certo e estar livre."""
     while True:
