@@ -7,7 +7,8 @@ por **reconhecimento facial**. O acesso só é liberado quando os três fatores 
 O sistema também tem um **painel do funcionário da portaria**, protegido por login com
 **2FA por e-mail**, para consultar e cadastrar moradores e veículos.
 
-> Projeto de portfólio desenvolvido em etapas.
+> Projeto de portfólio desenvolvido em etapas, com o histórico de commits mostrando a
+> evolução de cada parte do sistema.
 
 ---
 
@@ -300,12 +301,15 @@ Login com usuário, senha e código 2FA. No painel:
 | `python autenticacao.py` | Testa o login com 2FA pelo terminal |
 | `python email_envio.py` | Envia um e-mail de teste |
 | `python banco.py` | Testa a conexão com o MySQL |
-| `python painel_camera.py` | Mostra a câmera dentro de uma janela Qt (componente das telas) |
-| `python teste_camera.py` | Testa se a webcam abre (tecla **Q** para sair) |
-| `python teste_deteccao.py` | Mostra a detecção de rosto em tempo real |
-| `python teste_comparacao.py` | Mostra ao vivo a nota de semelhança com o rosto salvo |
-| `python teste_janela.py` | Testa se o PySide6 abre uma janela |
-| `python teste_movimento.py` | Mostra ao vivo o índice de giro do rosto (calibração da prova de vida) |
+| `python painel_camera.py` | Mostra a câmera dentro de uma janela Qt (também serve para testar a webcam) |
+| `python calibrar_giro.py` | Mostra ao vivo o índice de giro do rosto (calibração da prova de vida) |
+
+### Calibrar a prova de vida para outra câmera
+
+O limite de giro (0,30) foi calibrado com uma webcam de notebook. Com outra câmera, rode
+`python calibrar_giro.py` e anote o índice de giro **de frente**, virando para **cada lado**
+e com uma **foto no celular**. O limite em `vivacidade.py` (`LIMITE_GIRO`) deve ficar bem
+acima do valor da foto e abaixo do giro confortável de uma pessoa.
 
 ### Cadastro do rosto pelo terminal (alternativa)
 
@@ -344,6 +348,7 @@ senha_face/
 ├── acesso.py                # lógica do acesso: código + senha + rosto + registro
 ├── autenticacao.py          # login do funcionário e código 2FA
 ├── banco.py                 # conexão com o MySQL
+├── calibrar_giro.py         # ferramenta de calibração do índice de giro (prova de vida)
 ├── bloqueio.py              # bloqueio por tentativas e desbloqueio pelo funcionário
 ├── consultas.py             # consultas usadas no painel
 ├── dialogo_editar_morador.py # formulário de edição de morador
@@ -360,11 +365,6 @@ senha_face/
 ├── schema.sql               # criação das tabelas e da limpeza automática (retenção)
 ├── tela_login.py            # tela de login do funcionário com 2FA
 ├── tela_portaria.py         # interface da portaria para o morador
-├── teste_camera.py          # teste da webcam
-├── teste_comparacao.py      # teste da nota de semelhança facial
-├── teste_deteccao.py        # teste de detecção de rosto
-├── teste_janela.py          # teste de janela do PySide6
-├── teste_movimento.py       # calibração do índice de giro (prova de vida)
 ├── veiculos.py              # validação e cadastro de veículos
 ├── vivacidade.py            # prova de vida: desafio de movimento da cabeça
 └── README.md
@@ -444,6 +444,7 @@ senha_face/
   - [x] bloqueio por tentativas (por código e da portaria)
   - [x] alerta no painel e desbloqueio pelo funcionário, com registro
   - [x] prova de vida por desafio de movimento (anti-spoofing)
+- [x] **Fechamento:** remoção dos arquivos de teste, ferramenta de calibração e revisão final
 
 ---
 
