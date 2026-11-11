@@ -12,6 +12,9 @@ from dialogos import DialogoMorador, DialogoVeiculo
 from dialogo_editar_morador import DialogoEditarMorador
 from exclusao_morador import DialogoExcluirMorador
 
+# importa a aba de cadastro de rosto
+from aba_rosto import AbaRosto
+
 # importa as classes de interface
 from PySide6.QtWidgets import (
     QApplication,       # a aplicação Qt
@@ -34,6 +37,10 @@ from PySide6.QtCore import Qt
 # títulos das colunas da tabela de moradores
 COLUNAS_MORADORES = ["Código", "Nome", "Bloco", "Apto", "Rosto", "Veículo", "Cor", "Placa", "Situação"]
 
+# posição de cada aba (para saber qual está aberta)
+ABA_MORADORES = 0
+ABA_ROSTO = 1
+
 
 class PainelPorteiro(QWidget):
     """Painel do funcionário da portaria (abre só depois do login com 2FA)."""
@@ -48,7 +55,7 @@ class PainelPorteiro(QWidget):
 
         # título e tamanho
         self.setWindowTitle("Portaria - Painel do funcionário")
-        self.resize(1250, 650)
+        self.resize(1250, 680)
 
         # mesmo estilo escuro das outras telas
         self.setStyleSheet("""
@@ -76,10 +83,15 @@ class PainelPorteiro(QWidget):
         barra_topo.addWidget(botao_sair)
 
         # ---------- abas ----------
+        self.aba_rosto = AbaRosto()
+
         self.abas = QTabWidget()
-        self.abas.addTab(self.criar_aba_moradores(), "Moradores e veículos")
-        self.abas.addTab(QLabel("Em construção"), "Rosto")
-        self.abas.addTab(QLabel("Em construção"), "Histórico")
+        self.abas.addTab(self.criar_aba_moradores(), "Moradores e veículos")   # índice 0
+        self.abas.addTab(self.aba_rosto, "Rosto")                             # índice 1
+        self.abas.addTab(QLabel("Em construção"), "Histórico")                # índice 2
+
+        # ao trocar de aba: desliga a câmera e atualiza a tabela, se for o caso
+        self.abas.currentChanged.connect(self.trocou_aba)
 
         # ---------- layout geral ----------
         layout = QVBoxLayout(self)
@@ -88,6 +100,16 @@ class PainelPorteiro(QWidget):
 
         # carrega a tabela ao abrir
         self.carregar_moradores()
+
+    def trocou_aba(self, indice):
+        """Chamado quando o funcionário muda de aba."""
+        # saiu da aba Rosto: desliga a câmera e cancela qualquer captura
+        if indice != ABA_ROSTO:
+            self.aba_rosto.cancelar()
+
+        # voltou para Moradores: recarrega para mostrar mudanças (ex.: Rosto = Sim)
+        if indice == ABA_MORADORES:
+            self.carregar_moradores()
 
     # ================= aba moradores e veículos =================
 
@@ -277,9 +299,15 @@ class PainelPorteiro(QWidget):
     # ================= sair =================
 
     def sair(self):
-        """Fecha o painel e volta para a tela de login."""
+        """Desliga a câmera, fecha o painel e volta para a tela de login."""
+        self.aba_rosto.cancelar()
         self.close()
         self.ao_sair()
+
+    def closeEvent(self, evento):
+        """Chamado quando a janela fecha (inclusive pelo X): garante a câmera desligada."""
+        self.aba_rosto.cancelar()
+        evento.accept()
 
 
 # este bloco só roda com "python painel_porteiro.py"

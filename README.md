@@ -40,7 +40,8 @@ Esses valores ficam no início do arquivo `acesso.py` e podem ser ajustados.
 2. Recebe por e-mail um **código de 6 dígitos**, válido por **5 minutos**.
 3. Com o código confirmado, o painel abre com as abas:
    - **Moradores e veículos:** busca, cadastro, edição e exclusão de morador, e cadastro de veículo;
-   - **Rosto** e **Histórico:** em construção.
+   - **Rosto:** cadastro (ou troca) do rosto do morador pela câmera;
+   - **Histórico:** em construção.
 
 ### Regras de cadastro
 
@@ -225,6 +226,9 @@ Login com usuário, senha e código 2FA. No painel:
   confirmar. Apaga cadastro, senha, rosto e veículos; o histórico de acessos é mantido
   sem identificação (`morador_id` vazio);
 - **+ Novo veículo:** selecione o morador na tabela e informe modelo, cor e placa;
+- **Aba Rosto:** digite o código, clique em **Buscar** (a câmera liga) e em
+  **Iniciar captura**. O morador mexe a cabeça devagar enquanto o sistema tira 5 amostras;
+  a média é salva e a câmera desliga. A câmera também desliga ao trocar de aba ou sair;
 - **Sair:** volta para a tela de login.
 
 ### Outros comandos
@@ -244,9 +248,9 @@ Login com usuário, senha e código 2FA. No painel:
 | `python teste_comparacao.py` | Mostra ao vivo a nota de semelhança com o rosto salvo |
 | `python teste_janela.py` | Testa se o PySide6 abre uma janela |
 
-### Cadastro do rosto
+### Cadastro do rosto pelo terminal (alternativa)
 
-Depois de cadastrar o morador, rode `python rosto.py`, informe o código e aperte
+O caminho principal é a aba **Rosto** do painel. Pelo terminal, rode `python rosto.py`, informe o código e aperte
 **ESPAÇO** com a janela da câmera selecionada. Mexa a cabeça levemente: o sistema tira
 **5 amostras** e salva a **média** delas, o que torna o reconhecimento mais estável com
 mudanças de luz e de ângulo.
@@ -276,6 +280,7 @@ senha_face/
 ├── logs/                    # e-mails do modo de desenvolvimento (não versionado)
 ├── .env                     # credenciais e configurações (não versionado)
 ├── .gitignore               # arquivos que não vão para o GitHub
+├── aba_rosto.py             # aba do painel para cadastrar o rosto pela câmera
 ├── acesso.py                # lógica do acesso: código + senha + rosto + registro
 ├── autenticacao.py          # login do funcionário e código 2FA
 ├── banco.py                 # conexão com o MySQL
@@ -352,7 +357,7 @@ senha_face/
   - [x] tela da portaria para o morador
   - [x] login do funcionário com 2FA por e-mail
   - [x] painel: moradores e veículos (busca, cadastro, edição e exclusão)
-  - [ ] painel: cadastro de rosto
+  - [x] painel: cadastro de rosto
   - [ ] painel: histórico de acessos
 - [ ] **Etapa 7:** bloqueio por tentativas e detecção de foto (anti-spoofing)
 
