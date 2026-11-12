@@ -1,5 +1,8 @@
-# importa o time para controlar o intervalo entre as amostras
+# importa o time para controlar o tempo de cada passo
 import time
+
+# importa o math para arredondar a contagem regressiva para cima (3, 2, 1)
+import math
 
 # importa o painel da câmera (ele também resolve o conflito do Qt do OpenCV)
 from painel_camera import PainelCamera
@@ -12,9 +15,10 @@ from rosto import (
     media_das_assinaturas,   # média normalizada das amostras
     buscar_morador,          # (id, nome) do morador ativo pelo código
     salvar_assinatura,       # grava a assinatura no banco
-    TOTAL_AMOSTRAS,          # 5 amostras
-    INTERVALO_AMOSTRAS,      # 0.7 segundo entre amostras
 )
+
+# importa da prova de vida o cálculo do giro e o sinal de cada lado
+from vivacidade import indice_de_giro, esta_de_frente, SINAL_DO_LADO
 
 # importa a regra do código (4 dígitos)
 from regras import DIGITOS_CODIGO_MORADOR, codigo_morador_valido
@@ -31,15 +35,57 @@ from PySide6.QtGui import QRegularExpressionValidator
 # intervalo, em milissegundos, entre uma análise de frame e outra
 INTERVALO_ANALISE_MS = 150
 
-# cores do aviso embaixo da câmera
-COR_SUCESSO = "#4ade80"   # verde
-COR_ERRO = "#f87171"      # vermelho
+# segundos que cada instrução fica na tela (contagem) antes de tirar a amostra
+SEGUNDOS_POR_PASSO = 2
+
+# segundos extras que o passo espera a posição certa antes de desistir
+TEMPO_LIMITE_PASSO = 10
+
+# giro "leve": mais que de frente, menos que de perfil (pessoa de perfil passa de 0,48)
+GIRO_LEVE_MIN = 0.12
+GIRO_LEVE_MAX = 0.45
+
+# sequência guiada: (texto mostrado na tela, tipo de posição conferida)
+PASSOS_CAPTURA = [
+    ("Olhe de FRENTE para a câmera", "frente"),
+    ("Vire LEVEMENTE para a sua ESQUERDA", "esquerda"),
+    ("Vire LEVEMENTE para a sua DIREITA", "direita"),
+    ("LEVANTE levemente o queixo", "queixo"),
+    ("Olhe de FRENTE de novo", "frente"),
+]
+
+# cores dos textos embaixo da câmera
+COR_SUCESSO = "#4ade80"     # verde
+COR_ERRO = "#f87171"        # vermelho
+COR_INSTRUCAO = "#60a5fa"   # azul
 
 # estilo do botão "Iniciar captura": verde quando ligado, cinza quando desligado
 ESTILO_BOTAO_CAPTURA = """
     QPushButton { background-color: #15803d; font-weight: bold; }
     QPushButton:disabled { background-color: #2a2a2a; color: #777; }
 """
+
+
+def conferir_posicao(rosto, tipo):
+    """Confere se o rosto está na posição pedida. Devolve (True/False, dica)."""
+    # passo de frente: usa a mesma regra da confirmação final da portaria
+    if tipo == "frente":
+        if esta_de_frente(rosto):
+            return True, ""
+        return False, "Olhe mais de frente"
+
+    # passos de lado: o giro precisa ser leve, para o lado certo
+    if tipo in SINAL_DO_LADO:
+        # positivo = virou para o lado pedido; negativo = virou para o lado errado
+        giro = indice_de_giro(rosto) * SINAL_DO_LADO[tipo]
+        if giro < GIRO_LEVE_MIN:
+            return False, "Vire um pouco MAIS"
+        if giro > GIRO_LEVE_MAX:
+            return False, "Vire um pouco MENOS"
+        return True, ""
+
+    # passo do queixo: não há medida confiável; vale a contagem do tempo
+    return True, ""
 
 
 class AbaRosto(QWidget):
@@ -57,22 +103,33 @@ class AbaRosto(QWidget):
         self.nome = None
         self.capturando = False
         self.amostras = []
-        self.ultima_captura = 0.0
+        self.passo_atual = 0
+        self.inicio_passo = 0.0
 
         # relógio que analisa os frames enquanto a câmera está ligada
         self.timer_analise = QTimer(self)
         self.timer_analise.timeout.connect(self.analisar_frame)
 
-        # ---------- lado esquerdo: câmera e aviso logo abaixo ----------
+        # ---------- lado esquerdo: câmera, instrução e aviso logo abaixo ----------
         self.painel_camera = PainelCamera()
         self.painel_camera.setText("Busque um morador pelo código")
 
-        # aviso embaixo da câmera: detecção do rosto e mensagem de sucesso
+        # instrução grande da captura guiada (ex.: "Vire LEVEMENTE para a sua ESQUERDA  2")
+        self.instrucao = QLabel("")
+        self.instrucao.setAlignment(Qt.AlignCenter)
+        self.instrucao.setWordWrap(True)
+        self.instrucao.setStyleSheet(
+            f"font-size: 24px; font-weight: bold; padding: 6px; color: {COR_INSTRUCAO};"
+        )
+
+        # aviso embaixo da instrução: detecção do rosto e mensagem de sucesso/erro
         self.aviso_rosto = QLabel("")
         self.aviso_rosto.setAlignment(Qt.AlignCenter)
+        self.aviso_rosto.setWordWrap(True)
 
         coluna_camera = QVBoxLayout()
         coluna_camera.addWidget(self.painel_camera)
+        coluna_camera.addWidget(self.instrucao)
         coluna_camera.addWidget(self.aviso_rosto)
 
         # ---------- lado direito: busca e botões ----------
@@ -117,7 +174,8 @@ class AbaRosto(QWidget):
             "1. Digite o código e clique em Buscar.<br>"
             "2. Peça ao morador para olhar para a câmera.<br>"
             "3. Clique em Iniciar captura.<br>"
-            "4. O morador mexe a cabeça devagar (esquerda, direita, cima, baixo).<br><br>"
+            "4. O morador segue as instruções em azul embaixo da câmera "
+            f"({len(PASSOS_CAPTURA)} posições, cerca de {len(PASSOS_CAPTURA) * SEGUNDOS_POR_PASSO} s).<br><br>"
             "Se o morador já tiver rosto cadastrado, ele será <b>substituído</b>."
         )
         instrucoes.setWordWrap(True)
@@ -145,6 +203,14 @@ class AbaRosto(QWidget):
         self.aviso_rosto.setStyleSheet(
             f"font-size: 18px; font-weight: bold; padding: 8px; color: {cor};"
         )
+
+    def parar_captura(self, mensagem_erro):
+        """Interrompe a captura sem salvar, mas mantém a câmera e o morador para tentar de novo."""
+        self.capturando = False
+        self.amostras = []
+        self.instrucao.setText("")
+        self.botao_capturar.setEnabled(True)
+        self.status.setText(f"{mensagem_erro} Clique em Iniciar captura para tentar de novo.")
 
     # ================= fluxo =================
 
@@ -179,15 +245,16 @@ class AbaRosto(QWidget):
         self.status.setText("Posicione o morador e clique em Iniciar captura.")
 
     def iniciar_captura(self):
-        """Começa a juntar as amostras."""
+        """Começa a captura guiada pelo primeiro passo."""
         self.amostras = []
-        self.ultima_captura = 0.0
+        self.passo_atual = 0
+        self.inicio_passo = time.time()
         self.capturando = True
         self.botao_capturar.setEnabled(False)
-        self.status.setText(f"Capturando 0/{TOTAL_AMOSTRAS}... mexa a cabeça devagar.")
+        self.status.setText(f"Amostra 0/{len(PASSOS_CAPTURA)}")
 
     def analisar_frame(self):
-        """Chamado pelo relógio: verifica o rosto e, se estiver capturando, guarda amostras."""
+        """Chamado pelo relógio: verifica o rosto e, se estiver capturando, conduz os passos."""
         frame = self.painel_camera.ultimo_frame
         if frame is None:
             return
@@ -206,24 +273,52 @@ class AbaRosto(QWidget):
         else:
             self.mostrar_aviso("Apenas UMA pessoa na frente da câmera", COR_ERRO)
 
-        # guarda amostra: capturando + um rosto só + passou o intervalo
-        if self.capturando and quantidade == 1 and time.time() - self.ultima_captura >= INTERVALO_AMOSTRAS:
-            self.amostras.append(gerar_assinatura(self.reconhecedor, frame, rostos[0]))
-            self.ultima_captura = time.time()
-            self.status.setText(
-                f"Capturando {len(self.amostras)}/{TOTAL_AMOSTRAS}... mexa a cabeça devagar."
-            )
+        # fora da captura, só mostra o aviso
+        if not self.capturando:
+            return
 
-            # juntou todas: calcula a média, salva e encerra
-            if len(self.amostras) >= TOTAL_AMOSTRAS:
-                salvar_assinatura(self.morador_id, media_das_assinaturas(self.amostras))
-                nome = self.nome
+        # passo atual e tempo desde que ele começou
+        texto, tipo = PASSOS_CAPTURA[self.passo_atual]
+        decorrido = time.time() - self.inicio_passo
 
-                # desliga a câmera e limpa o estado
-                self.cancelar()
+        # 1) contagem regressiva: dá tempo do morador se posicionar
+        if decorrido < SEGUNDOS_POR_PASSO:
+            contagem = math.ceil(SEGUNDOS_POR_PASSO - decorrido)
+            self.instrucao.setText(f"{texto}   {contagem}")
+            return
 
-                # mensagem de sucesso em verde, logo abaixo da tela da câmera
-                self.mostrar_aviso(f"Rosto de {nome} cadastrado com sucesso!", COR_SUCESSO)
+        # 2) passou do tempo limite sem a posição certa: interrompe
+        if decorrido > SEGUNDOS_POR_PASSO + TEMPO_LIMITE_PASSO:
+            self.parar_captura(f"Não foi possível concluir: \"{texto}\".")
+            return
+
+        # 3) precisa de exatamente um rosto para tirar a amostra
+        if quantidade != 1:
+            self.instrucao.setText(texto)
+            return
+
+        # 4) confere a posição; se não estiver certa, mostra a dica e espera
+        posicao_certa, dica = conferir_posicao(rostos[0], tipo)
+        if not posicao_certa:
+            self.instrucao.setText(f"{texto}\n{dica}")
+            return
+
+        # 5) posição certa: guarda a amostra e passa para o próximo passo
+        self.amostras.append(gerar_assinatura(self.reconhecedor, frame, rostos[0]))
+        self.passo_atual += 1
+        self.inicio_passo = time.time()
+        self.status.setText(f"Amostra {len(self.amostras)}/{len(PASSOS_CAPTURA)}")
+
+        # 6) juntou todas: calcula a média, salva e encerra
+        if self.passo_atual >= len(PASSOS_CAPTURA):
+            salvar_assinatura(self.morador_id, media_das_assinaturas(self.amostras))
+            nome = self.nome
+
+            # desliga a câmera e limpa o estado
+            self.cancelar()
+
+            # mensagem de sucesso em verde, logo abaixo da tela da câmera
+            self.mostrar_aviso(f"Rosto de {nome} cadastrado com sucesso!", COR_SUCESSO)
 
     def cancelar(self):
         """Para tudo, desliga a câmera e limpa o estado (não salva nada)."""
@@ -232,9 +327,11 @@ class AbaRosto(QWidget):
         self.painel_camera.setText("Busque um morador pelo código")
         self.capturando = False
         self.amostras = []
+        self.passo_atual = 0
         self.morador_id = None
         self.nome = None
         self.rotulo_morador.setText("Nenhum morador selecionado.")
+        self.instrucao.setText("")
         self.aviso_rosto.setText("")
         self.botao_capturar.setEnabled(False)
         self.botao_cancelar.setEnabled(False)

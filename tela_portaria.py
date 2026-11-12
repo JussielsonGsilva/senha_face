@@ -30,6 +30,9 @@ from vivacidade import (
     MAX_FRAMES_SEM_ROSTO,    # tolerância de frames sem rosto (5)
 )
 
+# importa o comando de abrir a porta pela ESP32
+from fechadura import abrir_porta
+
 # importa as regras centralizadas
 from regras import DIGITOS_CODIGO_MORADOR, MOTIVO_CREDENCIAIS_INVALIDAS, MOTIVO_BLOQUEADO
 
@@ -66,6 +69,7 @@ COR_AVISO = "#b45309"
 COR_DESAFIO = "#1d4ed8"
 COR_LIBERADO = "#15803d"
 COR_NEGADO = "#b91c1c"
+COR_ALERTA = "#c2410c"   # laranja: liberado, mas a porta não abriu
 
 # fases da verificação facial
 FASE_ROSTO = "rosto"              # 1. reconhecer o rosto
@@ -170,6 +174,7 @@ class TelaPortaria(QWidget):
         # ---------- faixa de status ----------
         self.status = QLabel()
         self.status.setAlignment(Qt.AlignCenter)
+        self.status.setWordWrap(True)
         self.definir_status("Aguardando...", COR_NEUTRA)
 
         # ---------- montagem dos layouts ----------
@@ -265,19 +270,19 @@ class TelaPortaria(QWidget):
         # muitas tentativas: registra e mostra quanto tempo falta (extra = segundos)
         if situacao == "bloqueado":
             registrar_acesso(codigo, None, "NEGADO", MOTIVO_BLOQUEADO)
-            self.mostrar_resultado(False, f"Muitas tentativas. Aguarde {minutos_de_espera(extra)} min.")
+            self.mostrar_resultado(COR_NEGADO, f"Muitas tentativas. Aguarde {minutos_de_espera(extra)} min.")
             return
 
         # código ou senha inválidos
         if situacao == "invalido":
             registrar_acesso(codigo, morador_id, "NEGADO", MOTIVO_CREDENCIAIS_INVALIDAS)
-            self.mostrar_resultado(False, "ACESSO NEGADO: código ou senha inválidos.")
+            self.mostrar_resultado(COR_NEGADO, "ACESSO NEGADO: código ou senha inválidos.")
             return
 
         # sem rosto cadastrado
         if situacao == "sem_rosto":
             registrar_acesso(codigo, morador_id, "NEGADO", "rosto não cadastrado")
-            self.mostrar_resultado(False, "ACESSO NEGADO: rosto não cadastrado.")
+            self.mostrar_resultado(COR_NEGADO, "ACESSO NEGADO: rosto não cadastrado.")
             return
 
         # código e senha certos: guarda os dados para a verificação facial (extra = assinatura)
@@ -290,7 +295,7 @@ class TelaPortaria(QWidget):
         # liga a câmera; se falhar, registra e nega
         if not self.painel_camera.ligar():
             registrar_acesso(codigo, morador_id, "NEGADO", "câmera não abriu")
-            self.mostrar_resultado(False, "ACESSO NEGADO: câmera indisponível.")
+            self.mostrar_resultado(COR_NEGADO, "ACESSO NEGADO: câmera indisponível.")
             return
 
         # começa pela fase 1 (reconhecer o rosto)
@@ -406,25 +411,41 @@ class TelaPortaria(QWidget):
                 self.finalizar_verificacao(True, "rosto e prova de vida confirmados")
 
     def finalizar_verificacao(self, aprovado, motivo):
-        """Encerra a verificação facial, registra e mostra o resultado."""
+        """Encerra a verificação facial; se aprovado, manda abrir a porta; registra e mostra o resultado."""
         self.timer_verificacao.stop()
         self.painel_camera.desligar()
 
-        resultado = "LIBERADO" if aprovado else "NEGADO"
-        registrar_acesso(self.codigo_atual, self.morador_id, resultado, motivo, self.melhor_nota)
-
         if aprovado:
-            self.mostrar_resultado(True, f"ACESSO LIBERADO. Bem-vindo(a), {self.nome}!")
+            # mostra "abrindo" enquanto fala com a ESP32 (pode levar até 3 s se ela não responder)
+            self.definir_status("Abrindo a porta...", COR_LIBERADO)
+            QApplication.processEvents()
+
+            # manda a ESP32 acionar a fechadura
+            porta_abriu, _ = abrir_porta()
+
+            if porta_abriu is False:
+                # morador reconhecido, mas a fechadura falhou: registra o aviso e pede ajuda ao porteiro
+                registrar_acesso(self.codigo_atual, self.morador_id, "LIBERADO",
+                                 f"{motivo} (fechadura não respondeu)", self.melhor_nota)
+                self.mostrar_resultado(
+                    COR_ALERTA,
+                    f"ACESSO LIBERADO, mas a porta não abriu. Chame o porteiro.",
+                )
+            else:
+                # porta aberta (True) ou sistema sem fechadura configurada (None)
+                registrar_acesso(self.codigo_atual, self.morador_id, "LIBERADO", motivo, self.melhor_nota)
+                self.mostrar_resultado(COR_LIBERADO, f"ACESSO LIBERADO. Bem-vindo(a), {self.nome}!")
         else:
-            self.mostrar_resultado(False, f"ACESSO NEGADO: {motivo}.")
+            registrar_acesso(self.codigo_atual, self.morador_id, "NEGADO", motivo, self.melhor_nota)
+            self.mostrar_resultado(COR_NEGADO, f"ACESSO NEGADO: {motivo}.")
 
         # apaga da memória os dados do morador desta tentativa
         self.codigo_atual = self.morador_id = self.nome = self.assinatura_salva = None
         self.fase = None
 
-    def mostrar_resultado(self, aprovado, mensagem):
-        """Mostra o resultado em verde ou vermelho e agenda o reinício da tela."""
-        self.definir_status(mensagem, COR_LIBERADO if aprovado else COR_NEGADO)
+    def mostrar_resultado(self, cor, mensagem):
+        """Mostra o resultado na cor indicada e agenda o reinício da tela."""
+        self.definir_status(mensagem, cor)
         QTimer.singleShot(TEMPO_RESULTADO_MS, self.reiniciar_tela)
 
 
